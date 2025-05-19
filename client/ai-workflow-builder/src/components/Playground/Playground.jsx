@@ -24,6 +24,7 @@ export default function Playground() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [configModal, setConfigModal] = useState({ isOpen: false, nodeId: null });
+  const [connectionLineStyle, setConnectionLineStyle] = useState({});
 
   // Restore workflow from localStorage on mount
   useEffect(() => {
@@ -49,10 +50,80 @@ export default function Playground() {
     outputNode: OutputNode,
   }), [setConfigModal]);
 
-  const onConnect = useCallback(
-    (params) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges]
-  );
+
+
+
+
+   // Validation Checks
+
+   const allowedBotTargets = {
+    'input-image': ['image-generator', 'image-editor'],
+    'input-audio': ['audio-transcriber', 'voice-generator'],
+    'input-file': ['summarizer', 'translator', 'text-generator'],
+  };
+  
+  const isValidConnection = useCallback((connection) => {
+    const sourceNode = nodes.find(n => n.id === connection.source);
+    const targetNode = nodes.find(n => n.id === connection.target);
+  
+    if (!sourceNode || !targetNode) return false;
+  
+    // 1. No self-connection
+    if (sourceNode.id === targetNode.id) return false;
+  
+    // 2. No input-to-input or output-to-output
+    if (
+      (sourceNode.type === 'inputNode' && targetNode.type === 'inputNode') ||
+      (sourceNode.type === 'outputNode' && targetNode.type === 'outputNode')
+    ) return false;
+  
+    // 3. Input node can only connect to bot node
+    if (sourceNode.type === 'inputNode' && targetNode.type !== 'botNode') return false;
+  
+    // 4. Bot node can connect to bot or output node
+    if (sourceNode.type === 'botNode' && !(targetNode.type === 'botNode' || targetNode.type === 'outputNode')) return false;
+  
+    // 5. Output node cannot be a source
+    if (sourceNode.type === 'outputNode') return false;
+  
+    // 6. Type compatibility for input nodes
+    if (sourceNode.type === 'inputNode') {
+      const allowed = allowedBotTargets[sourceNode.data.type] || [];
+      if (!allowed.includes(targetNode.data.id)) return false;
+    }
+  
+    // 7. Prevent circular dependencies
+    // (Simple check: target cannot be an ancestor of source)
+    const hasCycle = (currentId, visited = new Set()) => {
+      if (currentId === sourceNode.id) return true;
+      visited.add(currentId);
+      const outgoing = edges.filter(e => e.source === currentId);
+      return outgoing.some(e => !visited.has(e.target) && hasCycle(e.target, visited));
+    };
+    if (hasCycle(targetNode.id)) return false;
+  
+    return true;
+  }, [nodes, edges]);
+
+
+
+
+
+
+
+  const onConnect = useCallback((params) => {
+    if (isValidConnection(params)) {
+      setEdges((eds) => addEdge(params, eds));
+      setConnectionLineStyle({}); // Reset line style
+    } else {
+      // Visual feedback for invalid connection
+      setConnectionLineStyle({
+        stroke: '#ff0000',
+        strokeWidth: 2,
+      });
+      setTimeout(() => setConnectionLineStyle({}), 1000); // Reset after 1s
+    }
+  }, [setEdges, isValidConnection]);
 
   const processBotNode = useCallback((node, inputData) => {
     if (node.data.id === 'summarizer') {
@@ -239,6 +310,10 @@ export default function Playground() {
     };
     reader.readAsText(file);
   }, [setNodes, setEdges]);
+
+
+ 
+  
   
   
   
@@ -328,6 +403,8 @@ export default function Playground() {
               onEdgesChange={onEdgesChange}
               nodeTypes={nodeTypes}
               onConnect={onConnect}
+              isValidConnection={isValidConnection}
+              connectionLineStyle={connectionLineStyle}
               fitView
               className="shadow-inner"
             >
