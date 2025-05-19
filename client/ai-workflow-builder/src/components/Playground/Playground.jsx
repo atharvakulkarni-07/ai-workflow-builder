@@ -57,9 +57,9 @@ export default function Playground() {
    // Validation Checks
 
    const allowedBotTargets = {
-    'input-image': ['image-generator', 'image-editor'],
-    'input-audio': ['audio-transcriber', 'voice-generator'],
-    'input-file': ['summarizer', 'translator', 'text-generator'],
+    'input-image': ['imagegen', 'img2img'],
+    'input-audio': ['speech2text', 'text2speech'],
+    'input-file': ['summarizer', 'translator', 'gpt', 'sentiment', 'codegen', 'extract'],
   };
   
   const isValidConnection = useCallback((connection) => {
@@ -68,42 +68,51 @@ export default function Playground() {
   
     if (!sourceNode || !targetNode) return false;
   
-    // 1. No self-connection
+    // No self-connection
     if (sourceNode.id === targetNode.id) return false;
   
-    // 2. No input-to-input or output-to-output
-    if (
-      (sourceNode.type === 'inputNode' && targetNode.type === 'inputNode') ||
-      (sourceNode.type === 'outputNode' && targetNode.type === 'outputNode')
-    ) return false;
+    // Input nodes cannot receive inputs
+    if (targetNode.type === 'inputNode') return false;
   
-    // 3. Input node can only connect to bot node
-    if (sourceNode.type === 'inputNode' && targetNode.type !== 'botNode') return false;
-  
-    // 4. Bot node can connect to bot or output node
-    if (sourceNode.type === 'botNode' && !(targetNode.type === 'botNode' || targetNode.type === 'outputNode')) return false;
-  
-    // 5. Output node cannot be a source
+    // Output node cannot send outputs
     if (sourceNode.type === 'outputNode') return false;
   
-    // 6. Type compatibility for input nodes
+    // All nodes except input nodes can only have ONE input
+    const existingInputs = edges.filter(e => e.target === targetNode.id).length;
+    if (existingInputs >= 1) return false;
+  
+    // Input node to bot node (type compatibility)
     if (sourceNode.type === 'inputNode') {
       const allowed = allowedBotTargets[sourceNode.data.type] || [];
-      if (!allowed.includes(targetNode.data.id)) return false;
+      return allowed.includes(targetNode.data.id);
     }
   
-    // 7. Prevent circular dependencies
-    // (Simple check: target cannot be an ancestor of source)
-    const hasCycle = (currentId, visited = new Set()) => {
-      if (currentId === sourceNode.id) return true;
-      visited.add(currentId);
-      const outgoing = edges.filter(e => e.source === currentId);
-      return outgoing.some(e => !visited.has(e.target) && hasCycle(e.target, visited));
-    };
-    if (hasCycle(targetNode.id)) return false;
+    // Allow any text-output bot to connect to image generator
+    if (
+      sourceNode.type === 'botNode' &&
+      targetNode.type === 'botNode' &&
+      targetNode.data.id === 'imagegen' &&
+      sourceNode.data.outputType === 'text'
+    ) {
+      return true;
+    }
   
-    return true;
+    // Bot to output node is allowed
+    if (sourceNode.type === 'botNode' && targetNode.type === 'outputNode') return true;
+  
+    // Allow chaining of text-output bots
+    if (
+      sourceNode.type === 'botNode' &&
+      targetNode.type === 'botNode' &&
+      sourceNode.data.outputType === 'text' &&
+      targetNode.data.outputType === 'text'
+    ) {
+      return true;
+    }
+  
+    return false;
   }, [nodes, edges]);
+  
 
 
 
@@ -126,15 +135,70 @@ export default function Playground() {
   }, [setEdges, isValidConnection]);
 
   const processBotNode = useCallback((node, inputData) => {
-    if (node.data.id === 'summarizer') {
-      return { text: `Mock summary: ${inputData?.text || inputData?.name || 'No input'}` };
+    // Get input text from previous node (could be text or file name)
+    const inputText = inputData?.text || inputData?.name || 'No input';
+  
+    switch(node.data.id) {
+      case 'gpt':
+        return { 
+          text: `Generated text: "${inputText}". Lorem ipsum dolor sit amet, consectetur adipiscing elit.`
+        };
+  
+      case 'summarizer':
+        return { 
+          text: `Summary: ${inputText.split(' ').slice(0, 10).join(' ')}...` 
+        };
+  
+      case 'translator':
+        return { 
+          text: `Translated (French): ${inputText} → ${inputText} en français` 
+        };
+  
+      case 'imagegen':
+        return {
+          text: `Generated image for: "${inputText}" (512x512 PNG)`,
+          // For real implementation, you might return a URL or base64 image
+        };
+  
+      case 'img2img':
+        return {
+          text: `Transformed image based on: "${inputText}" (1024x1024 PNG)`
+        };
+  
+      case 'speech2text':
+        return {
+          text: `Transcribed audio: "${inputData?.name || 'audiofile.wav'}" → "${inputText}"`
+        };
+  
+      case 'text2speech':
+        return {
+          text: `Generated audio: ${inputText}.wav`
+        };
+  
+      case 'sentiment':
+        const sentiments = ['😊 Positive', '😐 Neutral', '😠 Negative'];
+        return {
+          text: `Sentiment: ${sentiments[Math.floor(Math.random() * 3)]}`
+        };
+  
+      case 'codegen':
+        return {
+          text: `// Generated code:\nfunction ${inputText.split(' ')[0]}() {\n  return "${inputText}"\n}`
+        };
+  
+      case 'extract':
+        return {
+          text: `Entities: ${['Person', 'Location', 'Organization']
+            .map(e => `${e}: ${inputText.split(' ')[0]}_${e}`)
+            .join(', ')}`
+        };
+  
+      default:
+        return { 
+          text: `Processed: ${inputText}` 
+        };
     }
-    if (node.data.id === 'translator') {
-      return { text: `Mock translation: ${inputData?.text || inputData?.name || 'No input'}` };
-    }
-    // ...other cases (YET TO BE DONE)
-    return { text: `Processed: ${inputData?.name || 'No input'}` };
-  }, []);
+  }, []);  
 
   const traverseFromNode = useCallback((nodeId, results) => {
     const nextIds = getNextNodeIds(nodeId, edges);
@@ -149,29 +213,66 @@ export default function Playground() {
     });
   }, [edges, nodes, processBotNode]);
 
+
+
+
   const runWorkflow = useCallback(() => {
     const results = {};
     const inputNodeIds = getInputNodeIds(nodes, edges);
-
+  
+    // Process all input nodes and their branches
     inputNodeIds.forEach(inputId => {
       const inputNode = nodes.find(n => n.id === inputId);
       results[inputId] = inputNode.data;
-      traverseFromNode(inputId, results);
+      
+      // Create a queue for BFS traversal
+      const queue = [inputId];
+      const visited = new Set();
+  
+      while (queue.length > 0) {
+        const currentNodeId = queue.shift();
+        if (visited.has(currentNodeId)) continue;
+        visited.add(currentNodeId);
+  
+        const nextIds = getNextNodeIds(currentNodeId, edges);
+        
+        nextIds.forEach(nextId => {
+          const nextNode = nodes.find(n => n.id === nextId);
+          
+          // Only process if previous node has a result
+          if (results[currentNodeId]) {
+            if (nextNode.type === 'botNode') {
+              results[nextId] = processBotNode(nextNode, results[currentNodeId]);
+            } else if (nextNode.type === 'outputNode') {
+              results[nextId] = results[currentNodeId];
+            }
+            
+            queue.push(nextId);
+          }
+        });
+      }
     });
-
-    const outputNodeId = getOutputNodeId(nodes);
-    if (outputNodeId) {
-      const prevIds = getPrevNodeIds(outputNodeId, edges);
-      const lastInput = prevIds.length ? results[prevIds[0]] : null;
-      setNodes(nds =>
-        nds.map(node =>
-          node.id === outputNodeId
-            ? { ...node, data: { ...node.data, result: lastInput?.text || lastInput?.name || 'No result' } }
-            : node
-        )
-      );
-    }
-  }, [nodes, edges, traverseFromNode, setNodes]);
+  
+    // Update ALL output nodes with their respective inputs
+    const outputNodeIds = nodes.filter(n => n.type === 'outputNode').map(n => n.id);
+    setNodes(nds =>
+      nds.map(node => {
+        if (outputNodeIds.includes(node.id)) {
+          const prevIds = getPrevNodeIds(node.id, edges);
+          const lastInput = prevIds.length ? results[prevIds[0]] : null;
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              result: lastInput?.text || lastInput?.name || 'No result'
+            }
+          };
+        }
+        return node;
+      })
+    );
+  }, [nodes, edges, processBotNode, setNodes]);
+  
 
   const onDrop = useCallback((event) => {
     event.preventDefault();
