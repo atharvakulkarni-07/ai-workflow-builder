@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo, useEffect } from 'react';
 import { ReactFlow, ReactFlowProvider, addEdge, useNodesState, useEdgesState, Controls, Background } from '@xyflow/react'; 
 import '@xyflow/react/dist/style.css';
 import BotNode from '../BotNode/BotNode';
@@ -9,13 +9,13 @@ import ConfigModal from '../BotNode/ConfigModal';
 
 const initialNodes = [];
 const initialEdges = [];
+const WORKFLOW_KEY = 'savedWorkflow';
 
 // Helper functions
 const getInputNodeIds = (nodes, edges) => {
   const targetIds = edges.map(e => e.target);
   return nodes.filter(n => n.type === 'inputNode' && !targetIds.includes(n.id)).map(n => n.id);
 };
-
 const getOutputNodeId = (nodes) => nodes.find(n => n.type === 'outputNode')?.id || null;
 const getNextNodeIds = (nodeId, edges) => edges.filter(e => e.source === nodeId).map(e => e.target);
 const getPrevNodeIds = (nodeId, edges) => edges.filter(e => e.target === nodeId).map(e => e.source);
@@ -24,6 +24,22 @@ export default function Playground() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [configModal, setConfigModal] = useState({ isOpen: false, nodeId: null });
+
+  // Restore workflow from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem(WORKFLOW_KEY);
+    if (saved) {
+      try {
+        const workflow = JSON.parse(saved);
+        if (workflow.nodes && workflow.edges) {
+          setNodes(workflow.nodes);
+          setEdges(workflow.edges);
+        }
+      } catch (e) {
+        console.error('Failed to load workflow from localStorage:', e);
+      }
+    }
+  }, [setNodes, setEdges]);
 
   const nodeTypes = useMemo(() => ({
     botNode: (nodeProps) => (
@@ -89,7 +105,6 @@ export default function Playground() {
   const onDrop = useCallback((event) => {
     event.preventDefault();
     const fileData = event.dataTransfer.getData('sidebar-uploaded-file');
-    
     if (fileData) {
       const file = JSON.parse(fileData);
       const reactFlowBounds = event.target.getBoundingClientRect();
@@ -137,22 +152,163 @@ export default function Playground() {
   const currentNode = nodes.find(n => n.id === configModal.nodeId);
   const currentConfig = currentNode?.data?.config || {};
 
+  const saveWorkflow = useCallback(() => {
+    const workflow = {
+      nodes: nodes.map(node => ({
+        ...node,
+        data: node.data,
+      })),
+      edges: edges.map(edge => ({
+        ...edge,
+      })),
+    };
+    localStorage.setItem(WORKFLOW_KEY, JSON.stringify(workflow));
+    alert('Workflow saved successfully!');
+  }, [nodes, edges]);
+
+  const loadWorkflow = useCallback(() => {
+    const saved = localStorage.getItem(WORKFLOW_KEY);
+    if (saved) {
+      try {
+        const workflow = JSON.parse(saved);
+        if (workflow.nodes && workflow.edges) {
+          setNodes(workflow.nodes);
+          setEdges(workflow.edges);
+          alert('Workflow loaded!');
+        }
+      } catch (e) {
+        alert('Failed to load workflow: Invalid data.');
+      }
+    } else {
+      alert('No saved workflow found.');
+    }
+  }, [setNodes, setEdges]);
+
+
+
+  const clearWorkflow = useCallback(() => {
+    setNodes([]);
+    setEdges([]);
+    localStorage.removeItem(WORKFLOW_KEY);
+    alert('Workflow cleared!');
+  }, [setNodes, setEdges]);
+
+
+  const exportWorkflow = useCallback(() => {
+    const workflow = {
+      nodes: nodes.map(node => ({
+        ...node,
+        data: node.data,
+      })),
+      edges: edges.map(edge => ({
+        ...edge,
+      })),
+    };
+    const json = JSON.stringify(workflow, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+  
+    // Create a temporary link and click it
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'workflow.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [nodes, edges]);
+
+
+  const importWorkflow = useCallback((event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const workflow = JSON.parse(e.target.result);
+        if (workflow.nodes && workflow.edges) {
+          setNodes(workflow.nodes);
+          setEdges(workflow.edges);
+          alert('Workflow imported successfully!');
+        } else {
+          alert('Invalid workflow file.');
+        }
+      } catch (err) {
+        alert('Failed to import workflow: Invalid JSON.');
+      }
+    };
+    reader.readAsText(file);
+  }, [setNodes, setEdges]);
+  
+  
+  
+  
+
   return (
     <div className="flex flex-col h-full">
       {/* Header Section */}
       <header className="bg-white shadow-sm py-4 px-6 border-b border-gray-200">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-800">Workflow Canvas</h1>
-          <button
-            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-lg 
-                      shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2"
-            onClick={runWorkflow}
-          >
-            <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-            Run Workflow
-          </button>
+          <div className="flex gap-3">
+            <button
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg shadow-md hover:bg-gray-200 transition-all"
+              onClick={saveWorkflow}
+            >
+              💾 Save
+            </button>
+
+            <button
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg shadow-md hover:bg-gray-200 transition-all"
+              onClick={loadWorkflow}
+            >
+              📂 Load
+            </button>
+
+            <button
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg shadow-md hover:bg-gray-200 transition-all"
+              onClick={clearWorkflow}
+            >
+              🗑️ Clear
+            </button>
+
+
+
+            <button
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg shadow-md hover:bg-gray-200 transition-all"
+              onClick={exportWorkflow}
+            >
+              ⬇️ Export
+            </button>
+            <label
+              htmlFor="import-workflow-input"
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg shadow-md hover:bg-gray-200 transition-all cursor-pointer"
+            >
+              ⬆️ Import
+            </label>
+            <input
+              type="file"
+              accept="application/json"
+              id="import-workflow-input"
+              style={{ display: 'none' }}
+              onChange={importWorkflow}
+            />
+
+
+
+
+
+            <button
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-lg 
+                        shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2"
+              onClick={runWorkflow}
+            >
+              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+              Run Workflow
+            </button>
+          </div>
         </div>
       </header>
 
