@@ -26,8 +26,8 @@ export default function InputNode({ data }) {
             bottom: -20,
             width: 18,
             height: 18,
-            background: '#facc15', // yellow-400
-            borderColor: '#eab308', // yellow-600
+            background: '#facc15',
+            borderColor: '#eab308',
             boxShadow: '0 0 0 2px white',
           }}
       />

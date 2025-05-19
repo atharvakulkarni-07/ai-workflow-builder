@@ -9,13 +9,25 @@ export default function OutputNode({ data }) {
         type="target"
         position={Position.Top}
         className="w-3 h-3 bg-lime-500 rounded-full"
-        style={{ top: -8 }}
+        style={{
+            bottom: 20,
+            width: 18,
+            height: 18,
+            background: '#facc15',
+            borderColor: '#eab308',
+            boxShadow: '0 0 0 2px white',
+          }}
       />
       <div className="font-bold text-base mb-1">Output Node</div>
       <div className="text-xs text-gray-600 mb-2">
         This node collects and displays the final result of your workflow.
       </div>
-      {/* You can add a result display area here in the future */}
+      {/* Result display area */}
+      {data.result && (
+        <div className="mt-2 p-2 bg-white rounded border text-green-700">
+          <strong>Result:</strong> {data.result}
+        </div>
+      )}
     </div>
   );
 }
