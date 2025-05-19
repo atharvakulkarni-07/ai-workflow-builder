@@ -3,6 +3,7 @@ import { ReactFlow, ReactFlowProvider, addEdge, useNodesState, useEdgesState, Co
 import '@xyflow/react/dist/style.css';
 import BotNode from '../BotNode/BotNode';
 import InputNode from '../InputNode/InputNode'; // NEW: Import InputNode component
+import OutputNode from '../OutputNode/OutputNode';
 import { aiBots } from '../../data/aiBots';
 import ConfigModal from '../BotNode/ConfigModal';
 
@@ -23,7 +24,8 @@ export default function Playground() {
           onConfigure={(nodeId) => setConfigModal({ isOpen: true, nodeId })}
         />
       ),
-      inputNode: InputNode // NEW: Add inputNode type
+      inputNode: InputNode, // NEW: Add inputNode type
+      outputNode: OutputNode,
     }),
     [setConfigModal]
   );
@@ -56,6 +58,25 @@ export default function Playground() {
         setNodes((nds) => nds.concat(node));
         return; // Exit early to skip AI bot handling
       }
+
+
+       // NEW: Handle Output Node
+    const nodeType = event.dataTransfer.getData('application/reactflow');
+    if (nodeType === 'output-node') {
+      const reactFlowBounds = event.target.getBoundingClientRect();
+      const position = {
+        x: event.clientX - reactFlowBounds.left,
+        y: event.clientY - reactFlowBounds.top,
+      };
+      const node = {
+        id: `output-node_${+new Date()}`, // Unique ID
+        type: 'outputNode',
+        position,
+        data: {}, // No config needed for output node
+      };
+      setNodes((nds) => nds.concat(node));
+      return;
+    }
 
       // Existing AI bot handling
       const botId = event.dataTransfer.getData('application/reactflow');

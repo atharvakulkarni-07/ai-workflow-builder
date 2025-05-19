@@ -46,6 +46,21 @@ export default function Sidebar({ uploadedFiles, setUploadedFiles }) {
         ))}
       </ul>
 
+      <h2 className="text-xl font-bold mb-4">Output</h2>
+      <ul>
+        <li
+          className="mb-3 p-3 bg-lime-100 rounded shadow cursor-pointer border hover:bg-lime-200"
+          draggable
+          onDragStart={e => {
+            e.dataTransfer.setData('application/reactflow', 'output-node');
+            e.dataTransfer.effectAllowed = 'move';
+          }}
+        >
+          <div className="font-semibold">Output Node</div>
+          <div className="text-xs text-gray-500">Collect & display workflow results here</div>
+        </li>
+      </ul>
+
       <h2 className="text-xl font-bold mb-4">AI Bots</h2>
       <ul>
         {aiBots.map(bot => (
