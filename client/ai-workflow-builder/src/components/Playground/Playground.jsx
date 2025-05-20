@@ -106,8 +106,8 @@ export default function Playground() {
 
   async function processBotNode(node, inputData) {
     let inputText = inputData?.text || inputData?.name || 'No input';
-    console.log(inputText); // debugging flag
-    console.log(inputData.file.type); // debugging flag
+    console.log('Input text:', inputText); // Log text
+  console.log('File type:', inputData?.file?.type); // Safe logging
     if (inputData?.file?.type === 'application/pdf') {
       try {
         inputText = await extractTextFromPDF(inputData.file);
@@ -120,6 +120,18 @@ export default function Playground() {
     }
     switch (node.data.id) {
       case 'gpt': {
+        // Universal input handling: prefer previous bot's text, else file name, else fallback
+        let inputText = inputData?.text || inputData?.name || 'No input';
+      
+        // If input is a PDF file, extract its text
+        if (inputData?.file?.type === 'application/pdf') {
+          try {
+            inputText = await extractTextFromPDF(inputData.file);
+          } catch (err) {
+            return { text: 'Error reading PDF file' };
+          }
+        }
+      
         try {
           const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -151,14 +163,27 @@ export default function Playground() {
           if (!data.choices || !Array.isArray(data.choices) || !data.choices[0]?.message?.content) {
             return { text: 'API returned no choices/content.' };
           }
-          return { text: data.choices[0].message.content }; // ideally this is our answer;
+          return { text: data.choices[0].message.content };
         } catch (err) {
           console.error('Exception in API call:', err);
           return { text: 'Error: Unable to generate text.' };
         }
       }
+      
 
       case 'summarizer': {
+        // Universal input handling: prefer previous bot's text, else file name, else fallback
+        let inputText = inputData?.text || inputData?.name || 'No input';
+      
+        // If input is a PDF file, extract its text
+        if (inputData?.file?.type === 'application/pdf') {
+          try {
+            inputText = await extractTextFromPDF(inputData.file);
+          } catch (err) {
+            return { text: 'Error reading PDF file' };
+          }
+        }
+      
         try {
           const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -169,8 +194,8 @@ export default function Playground() {
               'X-Title': 'workflow.ai',
             },
             body: JSON.stringify({
-              // Choose a summarization-friendly model:
-              model: 'meta-llama/llama-3.3-8b-instruct:free', // or 'google/gemini-pro', 'openai/gpt-3.5-turbo', etc.
+              // You can swap this for another summarization-friendly model if you want
+              model: 'meta-llama/llama-3.3-8b-instruct:free',
               messages: [
                 { role: 'system', content: 'You are a helpful assistant that summarizes text clearly and concisely.' },
                 { role: 'user', content: `Summarize the following text:\n\n${inputText}` }
@@ -188,27 +213,90 @@ export default function Playground() {
         }
       }
       
-      case 'translator':
-        return { text: `Translated (French): ${inputText} → ${inputText} en français` };
+      
+      case 'translator': {
+        // Always prefer inputData.text (from previous bot), fallback to inputData.name (file), then 'No input'
+        const inputText = inputData?.text || inputData?.name || 'No input';
+
+
+        // If the input is a PDF file, extract its text and translate (Least preffered by the user)
+        if (inputData?.file?.type === 'application/pdf') {
+          try {
+            inputText = await extractTextFromPDF(inputData.file);
+          } catch (err) {
+            return { text: 'Error reading PDF file' };
+          }
+        }
+      
+        // Use the user's configured prompt, replacing {text} with inputText
+        const userPrompt = node.data.config?.prompt
+          ? node.data.config.prompt.replace('{text}', inputText)
+          : `Translate this to French:\n\n${inputText}`; // Default if not set
+      
+        try {
+          const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${import.meta.env.VITE_OPENROUTER_KEY}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': window.location.origin,
+              'X-Title': 'workflow.ai',
+            },
+            body: JSON.stringify({
+              model: 'meta-llama/llama-3.3-8b-instruct:free',
+              messages: [
+                { role: 'system', content: 'You are a translation assistant. You will translate the data you get in the language asked by the user.' },
+                { role: 'user', content: userPrompt }
+              ],
+              max_tokens: 512,
+            }),
+          });
+          const data = await resp.json();
+          if (data.error) {
+            return { text: `API Error: ${data.error.message}` };
+          }
+          return { text: data.choices?.[0]?.message?.content || 'No result' };
+        } catch (err) {
+          return { text: 'Error: Unable to translate text.' };
+        }
+      }
+      
+      
+      
+
+
       case 'imagegen':
         return { text: `Mock image generated for: "${inputText}" (512x512 PNG)` };
+
+
       case 'img2img':
         return { text: `Transformed image based on: "${inputText}" (1024x1024 PNG)` };
+
+
       case 'speech2text':
         return { text: `Transcribed audio: "${inputData?.name || 'audiofile.wav'}" → "${inputText}"` };
+
+
       case 'text2speech':
         return { text: `Generated audio: ${inputText}.wav` };
+
+
       case 'sentiment':
         const sentiments = ['😊 Positive', '😐 Neutral', '😠 Negative'];
         return { text: `Sentiment: ${sentiments[Math.floor(Math.random() * 3)]}` };
+
+
       case 'codegen':
         return { text: `// Generated code:\nfunction ${inputText.split(' ')[0]}() {\n  return "${inputText}"\n}` };
+
+
       case 'extract':
         return {
           text: `Entities: ${['Person', 'Location', 'Organization']
             .map(e => `${e}: ${inputText.split(' ')[0]}_${e}`)
             .join(', ')}`
         };
+
       default:
         return { text: `Processed: ${inputText}` };
     }
