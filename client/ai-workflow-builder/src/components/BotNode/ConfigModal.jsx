@@ -9,7 +9,6 @@ export default function ConfigModal({ isOpen, onClose, bot, config, onSave }) {
 
   if (!isOpen || !bot) return null;
 
-  // Example: Show a prompt field for text bots, prompt and size for image bots, etc.
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 min-w-[320px] shadow-lg relative">
@@ -26,16 +25,35 @@ export default function ConfigModal({ isOpen, onClose, bot, config, onSave }) {
           }}
         >
           {bot.type === 'text' && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">Prompt</label>
-              <input
-                type="text"
-                className="border rounded w-full p-2"
-                value={form.prompt || ''}
-                onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))}
-                required
-              />
-            </div>
+            <>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">
+                  <span className="font-semibold">System Prompt</span>
+                  <span className="text-xs text-gray-500 ml-1">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  className="border rounded w-full p-2"
+                  value={form.systemPrompt || ''}
+                  onChange={e => setForm(f => ({ ...f, systemPrompt: e.target.value }))}
+                  placeholder="e.g. You are a helpful assistant."
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">
+                  <span className="font-semibold">Prompt Template</span>
+                  <span className="text-xs text-gray-500 ml-1">(use <code>{'{text}'}</code> for input/PDF content)</span>
+                </label>
+                <textarea
+                  className="border rounded w-full p-2"
+                  value={form.prompt || ''}
+                  onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))}
+                  placeholder="e.g. Summarize this document in 3 bullet points: {text}"
+                  rows={3}
+                  required
+                />
+              </div>
+            </>
           )}
           {bot.type === 'image' && (
             <>

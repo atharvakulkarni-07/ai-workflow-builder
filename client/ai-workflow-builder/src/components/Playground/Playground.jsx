@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useMemo, useEffect } from 'react';
+import React, { useCallback, useState, useMemo, useEffect, useRef } from 'react';
 import { ReactFlow, ReactFlowProvider, addEdge, useNodesState, useEdgesState, Controls, Background } from '@xyflow/react'; 
 import '@xyflow/react/dist/style.css';
 import BotNode from '../BotNode/BotNode';
@@ -6,12 +6,12 @@ import InputNode from '../InputNode/InputNode';
 import OutputNode from '../OutputNode/OutputNode';
 import { aiBots } from '../../data/aiBots';
 import ConfigModal from '../BotNode/ConfigModal';
+import { extractTextFromPDF } from '../../utils/pdfutils';
 
 const initialNodes = [];
 const initialEdges = [];
 const WORKFLOW_KEY = 'savedWorkflow';
 
-// Helper functions
 const getInputNodeIds = (nodes, edges) => {
   const targetIds = edges.map(e => e.target);
   return nodes.filter(n => n.type === 'inputNode' && !targetIds.includes(n.id)).map(n => n.id);
@@ -25,6 +25,7 @@ export default function Playground() {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [configModal, setConfigModal] = useState({ isOpen: false, nodeId: null });
   const [connectionLineStyle, setConnectionLineStyle] = useState({});
+  const reactFlowWrapper = useRef(null);
 
   // Restore workflow from localStorage on mount
   useEffect(() => {
@@ -50,13 +51,8 @@ export default function Playground() {
     outputNode: OutputNode,
   }), [setConfigModal]);
 
-
-
-
-
-   // Validation Checks
-
-   const allowedBotTargets = {
+  // Validation Checks
+  const allowedBotTargets = {
     'input-image': ['imagegen', 'img2img'],
     'input-audio': ['speech2text', 'text2speech'],
     'input-file': ['summarizer', 'translator', 'gpt', 'sentiment', 'codegen', 'extract'],
@@ -65,29 +61,16 @@ export default function Playground() {
   const isValidConnection = useCallback((connection) => {
     const sourceNode = nodes.find(n => n.id === connection.source);
     const targetNode = nodes.find(n => n.id === connection.target);
-  
     if (!sourceNode || !targetNode) return false;
-  
-    // No self-connection
     if (sourceNode.id === targetNode.id) return false;
-  
-    // Input nodes cannot receive inputs
     if (targetNode.type === 'inputNode') return false;
-  
-    // Output node cannot send outputs
     if (sourceNode.type === 'outputNode') return false;
-  
-    // All nodes except input nodes can only have ONE input
     const existingInputs = edges.filter(e => e.target === targetNode.id).length;
     if (existingInputs >= 1) return false;
-  
-    // Input node to bot node (type compatibility)
     if (sourceNode.type === 'inputNode') {
       const allowed = allowedBotTargets[sourceNode.data.type] || [];
       return allowed.includes(targetNode.data.id);
     }
-  
-    // Allow any text-output bot to connect to image generator
     if (
       sourceNode.type === 'botNode' &&
       targetNode.type === 'botNode' &&
@@ -96,11 +79,7 @@ export default function Playground() {
     ) {
       return true;
     }
-  
-    // Bot to output node is allowed
     if (sourceNode.type === 'botNode' && targetNode.type === 'outputNode') return true;
-  
-    // Allow chaining of text-output bots
     if (
       sourceNode.type === 'botNode' &&
       targetNode.type === 'botNode' &&
@@ -109,151 +88,130 @@ export default function Playground() {
     ) {
       return true;
     }
-  
     return false;
   }, [nodes, edges]);
-  
-
-
-
-
-
-
 
   const onConnect = useCallback((params) => {
     if (isValidConnection(params)) {
       setEdges((eds) => addEdge(params, eds));
-      setConnectionLineStyle({}); // Reset line style
+      setConnectionLineStyle({});
     } else {
-      // Visual feedback for invalid connection
       setConnectionLineStyle({
         stroke: '#ff0000',
         strokeWidth: 2,
       });
-      setTimeout(() => setConnectionLineStyle({}), 1000); // Reset after 1s
+      setTimeout(() => setConnectionLineStyle({}), 1000);
     }
   }, [setEdges, isValidConnection]);
 
-  const processBotNode = useCallback((node, inputData) => {
-    // Get input text from previous node (could be text or file name)
-    const inputText = inputData?.text || inputData?.name || 'No input';
-  
-    switch(node.data.id) {
-      case 'gpt':
-        return { 
-          text: `Generated text: "${inputText}". Lorem ipsum dolor sit amet, consectetur adipiscing elit.`
-        };
-  
+  async function processBotNode(node, inputData) {
+    let inputText = inputData?.text || inputData?.name || 'No input';
+    console.log(inputText); // debugging flag
+    console.log(inputData.file.type); // debugging flag
+    if (inputData?.file?.type === 'application/pdf') {
+      try {
+        inputText = await extractTextFromPDF(inputData.file);
+        console.log('Input text has been read') // debugging flag
+        // console.log(inputText) // debugging flag  (HURRAY! It worked finally....)
+      } catch (err) {
+        console.log('Got an error in reading pdf file') // debugging flag
+        return { text: 'Error reading PDF file' };
+      }
+    }
+    switch (node.data.id) {
+      case 'gpt': {
+        try {
+          const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${import.meta.env.VITE_OPENROUTER_KEY}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': window.location.origin,
+              'X-Title': 'workflow.ai',
+            },
+            body: JSON.stringify({
+              model: 'meta-llama/llama-3.3-8b-instruct:free',
+              messages: [
+                { role: 'system', content: 'You are a helpful assistant...' },
+                { role: 'user', content: inputText }
+              ],
+              max_tokens: 1000,
+            }),
+          });
+          console.log('Response status:', resp.status, resp.statusText);
+          const data = await resp.json();
+          console.log('Raw API response:', data);
+      
+          if (!resp.ok) {
+            return { text: `API Error: ${resp.status} ${resp.statusText}` };
+          }
+          if (data.error) {
+            return { text: `API Error: ${data.error.message || JSON.stringify(data.error)}` };
+          }
+          if (!data.choices || !Array.isArray(data.choices) || !data.choices[0]?.message?.content) {
+            return { text: 'API returned no choices/content.' };
+          }
+          return { text: data.choices[0].message.content }; // ideally this is our answer;
+        } catch (err) {
+          console.error('Exception in API call:', err);
+          return { text: 'Error: Unable to generate text.' };
+        }
+      }
+      
       case 'summarizer':
-        return { 
-          text: `Summary: ${inputText.split(' ').slice(0, 10).join(' ')}...` 
-        };
-  
+        return { text: `Summary: ${inputText.split(' ').slice(0, 10).join(' ')}...` };
       case 'translator':
-        return { 
-          text: `Translated (French): ${inputText} → ${inputText} en français` 
-        };
-  
+        return { text: `Translated (French): ${inputText} → ${inputText} en français` };
       case 'imagegen':
-        return {
-          text: `Generated image for: "${inputText}" (512x512 PNG)`,
-          // For real implementation, you might return a URL or base64 image
-        };
-  
+        return { text: `Mock image generated for: "${inputText}" (512x512 PNG)` };
       case 'img2img':
-        return {
-          text: `Transformed image based on: "${inputText}" (1024x1024 PNG)`
-        };
-  
+        return { text: `Transformed image based on: "${inputText}" (1024x1024 PNG)` };
       case 'speech2text':
-        return {
-          text: `Transcribed audio: "${inputData?.name || 'audiofile.wav'}" → "${inputText}"`
-        };
-  
+        return { text: `Transcribed audio: "${inputData?.name || 'audiofile.wav'}" → "${inputText}"` };
       case 'text2speech':
-        return {
-          text: `Generated audio: ${inputText}.wav`
-        };
-  
+        return { text: `Generated audio: ${inputText}.wav` };
       case 'sentiment':
         const sentiments = ['😊 Positive', '😐 Neutral', '😠 Negative'];
-        return {
-          text: `Sentiment: ${sentiments[Math.floor(Math.random() * 3)]}`
-        };
-  
+        return { text: `Sentiment: ${sentiments[Math.floor(Math.random() * 3)]}` };
       case 'codegen':
-        return {
-          text: `// Generated code:\nfunction ${inputText.split(' ')[0]}() {\n  return "${inputText}"\n}`
-        };
-  
+        return { text: `// Generated code:\nfunction ${inputText.split(' ')[0]}() {\n  return "${inputText}"\n}` };
       case 'extract':
         return {
           text: `Entities: ${['Person', 'Location', 'Organization']
             .map(e => `${e}: ${inputText.split(' ')[0]}_${e}`)
             .join(', ')}`
         };
-  
       default:
-        return { 
-          text: `Processed: ${inputText}` 
-        };
+        return { text: `Processed: ${inputText}` };
     }
-  }, []);  
+  }
 
-  const traverseFromNode = useCallback((nodeId, results) => {
-    const nextIds = getNextNodeIds(nodeId, edges);
-    nextIds.forEach(nextId => {
-      const nextNode = nodes.find(n => n.id === nextId);
-      if (nextNode.type === 'botNode') {
-        results[nextId] = processBotNode(nextNode, results[nodeId]);
-        traverseFromNode(nextId, results);
-      } else if (nextNode.type === 'outputNode') {
-        results[nextId] = results[nodeId];
-      }
-    });
-  }, [edges, nodes, processBotNode]);
-
-
-
-
-  const runWorkflow = useCallback(() => {
+  const runWorkflow = useCallback(async () => {
     const results = {};
     const inputNodeIds = getInputNodeIds(nodes, edges);
-  
-    // Process all input nodes and their branches
-    inputNodeIds.forEach(inputId => {
+    for (const inputId of inputNodeIds) {
       const inputNode = nodes.find(n => n.id === inputId);
       results[inputId] = inputNode.data;
-      
-      // Create a queue for BFS traversal
       const queue = [inputId];
       const visited = new Set();
-  
       while (queue.length > 0) {
         const currentNodeId = queue.shift();
         if (visited.has(currentNodeId)) continue;
         visited.add(currentNodeId);
-  
         const nextIds = getNextNodeIds(currentNodeId, edges);
-        
-        nextIds.forEach(nextId => {
+        for (const nextId of nextIds) {
           const nextNode = nodes.find(n => n.id === nextId);
-          
-          // Only process if previous node has a result
           if (results[currentNodeId]) {
             if (nextNode.type === 'botNode') {
-              results[nextId] = processBotNode(nextNode, results[currentNodeId]);
+              results[nextId] = await processBotNode(nextNode, results[currentNodeId]);
             } else if (nextNode.type === 'outputNode') {
               results[nextId] = results[currentNodeId];
             }
-            
             queue.push(nextId);
           }
-        });
+        }
       }
-    });
-  
-    // Update ALL output nodes with their respective inputs
+    }
     const outputNodeIds = nodes.filter(n => n.type === 'outputNode').map(n => n.id);
     setNodes(nds =>
       nds.map(node => {
@@ -272,47 +230,111 @@ export default function Playground() {
       })
     );
   }, [nodes, edges, processBotNode, setNodes]);
-  
 
+  // Save, Load, Export, Import, Clear
+  const saveWorkflow = () => {
+    localStorage.setItem(WORKFLOW_KEY, JSON.stringify({ nodes, edges }));
+    alert('Workflow saved!');
+  };
+
+  const loadWorkflow = () => {
+    const saved = localStorage.getItem(WORKFLOW_KEY);
+    if (saved) {
+      try {
+        const workflow = JSON.parse(saved);
+        if (workflow.nodes && workflow.edges) {
+          setNodes(workflow.nodes);
+          setEdges(workflow.edges);
+          alert('Workflow loaded!');
+        }
+      } catch (e) {
+        alert('Failed to load workflow.');
+      }
+    } else {
+      alert('No saved workflow found.');
+    }
+  };
+
+  const clearWorkflow = () => {
+    setNodes([]);
+    setEdges([]);
+    localStorage.removeItem(WORKFLOW_KEY);
+    alert('Workflow cleared!');
+  };
+
+  const exportWorkflow = () => {
+    const dataStr = JSON.stringify({ nodes, edges }, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'workflow.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importWorkflow = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const workflow = JSON.parse(e.target.result);
+        if (workflow.nodes && workflow.edges) {
+          setNodes(workflow.nodes);
+          setEdges(workflow.edges);
+          alert('Workflow imported!');
+        } else {
+          alert('Invalid workflow file.');
+        }
+      } catch (err) {
+        alert('Failed to import workflow.');
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
+
+  // FINAL UPDATED ONDROP HANDLER
   const onDrop = useCallback((event) => {
     event.preventDefault();
-    const fileData = event.dataTransfer.getData('sidebar-uploaded-file');
-    if (fileData) {
-      const file = JSON.parse(fileData);
-      const reactFlowBounds = event.target.getBoundingClientRect();
+    const type = event.dataTransfer.getData('application/reactflow');
+    if (!type) return;
+    const reactFlowBounds = reactFlowWrapper.current.getBoundingClientRect();
+    const position = {
+      x: event.clientX - reactFlowBounds.left,
+      y: event.clientY - reactFlowBounds.top,
+    };
+    if (type === 'input-node') {
       const node = {
-        id: file.id,
+        id: `input-${+new Date()}`,
         type: 'inputNode',
-        position: { x: event.clientX - reactFlowBounds.left, y: event.clientY - reactFlowBounds.top },
-        data: { ...file },
+        position,
+        data: { name: '', type: 'input-file' },
       };
       setNodes((nds) => nds.concat(node));
       return;
     }
-
-    const nodeType = event.dataTransfer.getData('application/reactflow');
-    if (nodeType === 'output-node') {
-      const reactFlowBounds = event.target.getBoundingClientRect();
+    if (type === 'output-node') {
       const node = {
-        id: `output-node_${+new Date()}`,
+        id: `output-${+new Date()}`,
         type: 'outputNode',
-        position: { x: event.clientX - reactFlowBounds.left, y: event.clientY - reactFlowBounds.top },
+        position,
         data: {},
       };
       setNodes((nds) => nds.concat(node));
       return;
     }
-
-    const bot = aiBots.find(b => b.id === nodeType);
+    const bot = aiBots.find(b => b.id === type);
     if (bot) {
-      const reactFlowBounds = event.target.getBoundingClientRect();
       const node = {
-        id: `${nodeType}_${+new Date()}`,
+        id: `${type}-${+new Date()}`,
         type: 'botNode',
-        position: { x: event.clientX - reactFlowBounds.left, y: event.clientY - reactFlowBounds.top },
-        data: { ...bot },
+        position,
+        data: { ...bot},
       };
       setNodes((nds) => nds.concat(node));
+      return;
     }
   }, [setNodes]);
 
@@ -324,175 +346,38 @@ export default function Playground() {
   const currentNode = nodes.find(n => n.id === configModal.nodeId);
   const currentConfig = currentNode?.data?.config || {};
 
-  const saveWorkflow = useCallback(() => {
-    const workflow = {
-      nodes: nodes.map(node => ({
-        ...node,
-        data: node.data,
-      })),
-      edges: edges.map(edge => ({
-        ...edge,
-      })),
-    };
-    localStorage.setItem(WORKFLOW_KEY, JSON.stringify(workflow));
-    alert('Workflow saved successfully!');
-  }, [nodes, edges]);
-
-  const loadWorkflow = useCallback(() => {
-    const saved = localStorage.getItem(WORKFLOW_KEY);
-    if (saved) {
-      try {
-        const workflow = JSON.parse(saved);
-        if (workflow.nodes && workflow.edges) {
-          setNodes(workflow.nodes);
-          setEdges(workflow.edges);
-          alert('Workflow loaded!');
-        }
-      } catch (e) {
-        alert('Failed to load workflow: Invalid data.');
-      }
-    } else {
-      alert('No saved workflow found.');
-    }
-  }, [setNodes, setEdges]);
-
-
-
-  const clearWorkflow = useCallback(() => {
-    setNodes([]);
-    setEdges([]);
-    localStorage.removeItem(WORKFLOW_KEY);
-    alert('Workflow cleared!');
-  }, [setNodes, setEdges]);
-
-
-  const exportWorkflow = useCallback(() => {
-    const workflow = {
-      nodes: nodes.map(node => ({
-        ...node,
-        data: node.data,
-      })),
-      edges: edges.map(edge => ({
-        ...edge,
-      })),
-    };
-    const json = JSON.stringify(workflow, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-  
-    // Create a temporary link and click it
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'workflow.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [nodes, edges]);
-
-
-  const importWorkflow = useCallback((event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      try {
-        const workflow = JSON.parse(e.target.result);
-        if (workflow.nodes && workflow.edges) {
-          setNodes(workflow.nodes);
-          setEdges(workflow.edges);
-          alert('Workflow imported successfully!');
-        } else {
-          alert('Invalid workflow file.');
-        }
-      } catch (err) {
-        alert('Failed to import workflow: Invalid JSON.');
-      }
-    };
-    reader.readAsText(file);
-  }, [setNodes, setEdges]);
-
-
- 
-  
-  
-  
-  
-  
-
   return (
     <div className="flex flex-col h-full">
       {/* Header Section */}
-      <header className="bg-white shadow-sm py-4 px-6 border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-800">Workflow Canvas</h1>
-          <div className="flex gap-3">
-            <button
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg shadow-md hover:bg-gray-200 transition-all"
-              onClick={saveWorkflow}
-            >
-              💾 Save
-            </button>
-
-            <button
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg shadow-md hover:bg-gray-200 transition-all"
-              onClick={loadWorkflow}
-            >
-              📂 Load
-            </button>
-
-            <button
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg shadow-md hover:bg-gray-200 transition-all"
-              onClick={clearWorkflow}
-            >
-              🗑️ Clear
-            </button>
-
-
-
-            <button
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg shadow-md hover:bg-gray-200 transition-all"
-              onClick={exportWorkflow}
-            >
-              ⬇️ Export
-            </button>
-            <label
-              htmlFor="import-workflow-input"
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg shadow-md hover:bg-gray-200 transition-all cursor-pointer"
-            >
-              ⬆️ Import
-            </label>
-            <input
-              type="file"
-              accept="application/json"
-              id="import-workflow-input"
-              style={{ display: 'none' }}
-              onChange={importWorkflow}
-            />
-
-
-
-
-
-            <button
-              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-lg 
-                        shadow-md hover:shadow-lg transition-all duration-200 flex items-center gap-2"
-              onClick={runWorkflow}
-            >
-              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z"/>
-              </svg>
-              Run Workflow
-            </button>
-          </div>
+      <div className="flex items-center justify-between px-6 py-3 border-b bg-white shadow-sm">
+        <div className="font-bold text-xl tracking-tight text-blue-700">AI Workflow Playground</div>
+        <div className="flex gap-2">
+          <button onClick={runWorkflow} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow">
+            ▶ Run
+          </button>
+          <button onClick={saveWorkflow} className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded shadow">
+            💾 Save
+          </button>
+          <button onClick={loadWorkflow} className="bg-blue-400 hover:bg-blue-500 text-white px-4 py-2 rounded shadow">
+            📂 Load
+          </button>
+          <button onClick={exportWorkflow} className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded shadow">
+            ⬇ Export
+          </button>
+          <label className="bg-yellow-400 hover:bg-yellow-500 text-white px-4 py-2 rounded shadow cursor-pointer">
+            ⬆ Import
+            <input type="file" accept="application/json" onChange={importWorkflow} className="hidden" />
+          </label>
+          <button onClick={clearWorkflow} className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded shadow">
+            ✖ Clear
+          </button>
         </div>
-      </header>
-
-      {/* Main Canvas Area with drag-and-drop handlers */}
+      </div>
       <div className="flex-1 relative bg-gradient-to-br from-gray-50 to-gray-100">
         <ReactFlowProvider>
           <div
             className="w-full h-full"
+            ref={reactFlowWrapper}
             onDrop={onDrop}
             onDragOver={onDragOver}
             style={{ minHeight: "100%" }}
@@ -524,7 +409,6 @@ export default function Playground() {
           </div>
         </ReactFlowProvider>
       </div>
-
       {/* Configuration Modal */}
       <ConfigModal
         isOpen={configModal.isOpen}
