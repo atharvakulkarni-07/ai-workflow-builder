@@ -90,7 +90,7 @@ export default function Playground() {
   const allowedBotTargets = {
     'input-image': ['imagegen', 'img2img'],
     'input-audio': ['speech2text', 'text2speech'],
-    'input-file': ['summarizer', 'translator', 'gpt', 'sentiment', 'codegen', 'extract'],
+    'input-file': ['summarizer', 'translator', 'gpt', 'sentiment', 'codegen', 'extract', 'imagegen'],
   };
   const isValidConnection = useCallback((connection) => {
     const sourceNode = nodes.find(n => n.id === connection.source);
@@ -244,7 +244,36 @@ export default function Playground() {
           return { text: 'Error: Unable to translate text.' };
         }
       }
-      // Add other bots here...
+
+      case 'imagegen': {
+        // Prefer previous bot's text, else file name, else fallback
+        let inputText = inputData?.text || inputData?.name || 'No input';
+      
+        // If input is a PDF file, extract its text (optional, skip for images)
+        if (inputData?.file?.type === 'application/pdf') {
+          try {
+            inputText = await extractTextFromPDF(inputData.file);
+          } catch (err) {
+            return { text: 'Error reading PDF file' };
+          }
+        }
+      
+        // Use user-configured prompt, replacing {text} with inputText, or fallback
+        const userPrompt = node.data.config?.prompt
+          ? node.data.config.prompt.replace('{text}', inputText)
+          : `A beautiful illustration of: ${inputText}`;
+      
+        // Pollinations API: returns image directly from prompt
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(userPrompt)}`;
+      
+        // You can optionally verify the image loads by fetching HEAD or GET, but usually you can just return the URL
+        return {
+          text: `Image generated for: ${userPrompt}`,
+          imageUrl
+        };
+      }
+
+      // other bots
       default:
         return { text: inputText };
     }
@@ -254,15 +283,18 @@ export default function Playground() {
   const runWorkflow = useCallback(async () => {
     const results = {};
     const inputNodeIds = getInputNodeIds(nodes, edges);
+    
     for (const inputId of inputNodeIds) {
       const inputNode = nodes.find(n => n.id === inputId);
       results[inputId] = inputNode.data;
       const queue = [inputId];
       const visited = new Set();
+      
       while (queue.length > 0) {
         const currentNodeId = queue.shift();
         if (visited.has(currentNodeId)) continue;
         visited.add(currentNodeId);
+        
         const nextIds = getNextNodeIds(currentNodeId, edges);
         for (const nextId of nextIds) {
           const nextNode = nodes.find(n => n.id === nextId);
@@ -277,6 +309,7 @@ export default function Playground() {
         }
       }
     }
+  
     const outputNodeIds = nodes.filter(n => n.type === 'outputNode').map(n => n.id);
     setNodes(nds =>
       nds.map(node => {
@@ -287,6 +320,7 @@ export default function Playground() {
             ...node,
             data: {
               ...node.data,
+              ...lastInput, // This is the critical line
               result: lastInput?.text || lastInput?.name || 'No result'
             }
           };
@@ -295,6 +329,7 @@ export default function Playground() {
       })
     );
   }, [nodes, edges, processBotNode, setNodes]);
+  
 
   // --- Save, Load, Export, Import, Clear ---
   const saveWorkflow = () => {
