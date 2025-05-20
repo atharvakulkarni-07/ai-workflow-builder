@@ -157,9 +157,37 @@ export default function Playground() {
           return { text: 'Error: Unable to generate text.' };
         }
       }
+
+      case 'summarizer': {
+        try {
+          const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${import.meta.env.VITE_OPENROUTER_KEY}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': window.location.origin,
+              'X-Title': 'workflow.ai',
+            },
+            body: JSON.stringify({
+              // Choose a summarization-friendly model:
+              model: 'meta-llama/llama-3.3-8b-instruct:free', // or 'google/gemini-pro', 'openai/gpt-3.5-turbo', etc.
+              messages: [
+                { role: 'system', content: 'You are a helpful assistant that summarizes text clearly and concisely.' },
+                { role: 'user', content: `Summarize the following text:\n\n${inputText}` }
+              ],
+              max_tokens: 512,
+            }),
+          });
+          const data = await resp.json();
+          if (data.error) {
+            return { text: `API Error: ${data.error.message}` };
+          }
+          return { text: data.choices?.[0]?.message?.content || 'No result' };
+        } catch (err) {
+          return { text: 'Error: Unable to summarize text.' };
+        }
+      }
       
-      case 'summarizer':
-        return { text: `Summary: ${inputText.split(' ').slice(0, 10).join(' ')}...` };
       case 'translator':
         return { text: `Translated (French): ${inputText} → ${inputText} en français` };
       case 'imagegen':
