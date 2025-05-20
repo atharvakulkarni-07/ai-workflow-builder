@@ -20,11 +20,46 @@ const getOutputNodeId = (nodes) => nodes.find(n => n.type === 'outputNode')?.id 
 const getNextNodeIds = (nodeId, edges) => edges.filter(e => e.source === nodeId).map(e => e.target);
 const getPrevNodeIds = (nodeId, edges) => edges.filter(e => e.target === nodeId).map(e => e.source);
 
+function workflowGenerationPrompt(userPrompt) {
+  return `
+You are a workflow generator for an AI automation tool. Convert this user request into a valid React Flow JSON workflow:
+
+USER REQUEST: "${userPrompt}"
+
+Respond ONLY with valid JSON in this structure:
+{
+  "nodes": [
+    {
+      "id": "input-1",
+      "type": "inputNode",
+      "position": { "x": 100, "y": 100 },
+      "data": { "label": "Input PDF" }
+    }
+    // ...more nodes
+  ],
+  "edges": [
+    {
+      "id": "e1-2",
+      "source": "input-1",
+      "target": "summarizer-1"
+    }
+  ]
+}
+
+Important rules:
+- Use these node types: inputNode, outputNode, summarizer, translator, gpt
+- Always start with an inputNode and end with an outputNode
+- Never add markdown/extra text - only JSON
+`;
+}
+
 export default function Playground() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [configModal, setConfigModal] = useState({ isOpen: false, nodeId: null });
   const [connectionLineStyle, setConnectionLineStyle] = useState({});
+  const [promptInput, setPromptInput] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
   const reactFlowWrapper = useRef(null);
 
   // Restore workflow from localStorage on mount
@@ -51,13 +86,12 @@ export default function Playground() {
     outputNode: OutputNode,
   }), [setConfigModal]);
 
-  // Validation Checks
+  // --- Validation Logic (unchanged) ---
   const allowedBotTargets = {
     'input-image': ['imagegen', 'img2img'],
     'input-audio': ['speech2text', 'text2speech'],
     'input-file': ['summarizer', 'translator', 'gpt', 'sentiment', 'codegen', 'extract'],
   };
-  
   const isValidConnection = useCallback((connection) => {
     const sourceNode = nodes.find(n => n.id === connection.source);
     const targetNode = nodes.find(n => n.id === connection.target);
@@ -104,34 +138,20 @@ export default function Playground() {
     }
   }, [setEdges, isValidConnection]);
 
+  // --- AI Bot Logic (summarizer, gpt, translator, etc.) ---
+
   async function processBotNode(node, inputData) {
+    // Universal input handling for all bots
     let inputText = inputData?.text || inputData?.name || 'No input';
-    console.log('Input text:', inputText); // Log text
-  console.log('File type:', inputData?.file?.type); // Safe logging
     if (inputData?.file?.type === 'application/pdf') {
       try {
         inputText = await extractTextFromPDF(inputData.file);
-        console.log('Input text has been read') // debugging flag
-        // console.log(inputText) // debugging flag  (HURRAY! It worked finally....)
       } catch (err) {
-        console.log('Got an error in reading pdf file') // debugging flag
         return { text: 'Error reading PDF file' };
       }
     }
     switch (node.data.id) {
       case 'gpt': {
-        // Universal input handling: prefer previous bot's text, else file name, else fallback
-        let inputText = inputData?.text || inputData?.name || 'No input';
-      
-        // If input is a PDF file, extract its text
-        if (inputData?.file?.type === 'application/pdf') {
-          try {
-            inputText = await extractTextFromPDF(inputData.file);
-          } catch (err) {
-            return { text: 'Error reading PDF file' };
-          }
-        }
-      
         try {
           const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -150,10 +170,7 @@ export default function Playground() {
               max_tokens: 1000,
             }),
           });
-          console.log('Response status:', resp.status, resp.statusText);
           const data = await resp.json();
-          console.log('Raw API response:', data);
-      
           if (!resp.ok) {
             return { text: `API Error: ${resp.status} ${resp.statusText}` };
           }
@@ -165,25 +182,10 @@ export default function Playground() {
           }
           return { text: data.choices[0].message.content };
         } catch (err) {
-          console.error('Exception in API call:', err);
           return { text: 'Error: Unable to generate text.' };
         }
       }
-      
-
       case 'summarizer': {
-        // Universal input handling: prefer previous bot's text, else file name, else fallback
-        let inputText = inputData?.text || inputData?.name || 'No input';
-      
-        // If input is a PDF file, extract its text
-        if (inputData?.file?.type === 'application/pdf') {
-          try {
-            inputText = await extractTextFromPDF(inputData.file);
-          } catch (err) {
-            return { text: 'Error reading PDF file' };
-          }
-        }
-      
         try {
           const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -194,7 +196,6 @@ export default function Playground() {
               'X-Title': 'workflow.ai',
             },
             body: JSON.stringify({
-              // You can swap this for another summarization-friendly model if you want
               model: 'meta-llama/llama-3.3-8b-instruct:free',
               messages: [
                 { role: 'system', content: 'You are a helpful assistant that summarizes text clearly and concisely.' },
@@ -212,27 +213,10 @@ export default function Playground() {
           return { text: 'Error: Unable to summarize text.' };
         }
       }
-      
-      
       case 'translator': {
-        // Always prefer inputData.text (from previous bot), fallback to inputData.name (file), then 'No input'
-        const inputText = inputData?.text || inputData?.name || 'No input';
-
-
-        // If the input is a PDF file, extract its text and translate (Least preffered by the user)
-        if (inputData?.file?.type === 'application/pdf') {
-          try {
-            inputText = await extractTextFromPDF(inputData.file);
-          } catch (err) {
-            return { text: 'Error reading PDF file' };
-          }
-        }
-      
-        // Use the user's configured prompt, replacing {text} with inputText
         const userPrompt = node.data.config?.prompt
           ? node.data.config.prompt.replace('{text}', inputText)
-          : `Translate this to French:\n\n${inputText}`; // Default if not set
-      
+          : `Translate this to French:\n\n${inputText}`;
         try {
           const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -260,48 +244,13 @@ export default function Playground() {
           return { text: 'Error: Unable to translate text.' };
         }
       }
-      
-      
-      
-
-
-      case 'imagegen':
-        return { text: `Mock image generated for: "${inputText}" (512x512 PNG)` };
-
-
-      case 'img2img':
-        return { text: `Transformed image based on: "${inputText}" (1024x1024 PNG)` };
-
-
-      case 'speech2text':
-        return { text: `Transcribed audio: "${inputData?.name || 'audiofile.wav'}" → "${inputText}"` };
-
-
-      case 'text2speech':
-        return { text: `Generated audio: ${inputText}.wav` };
-
-
-      case 'sentiment':
-        const sentiments = ['😊 Positive', '😐 Neutral', '😠 Negative'];
-        return { text: `Sentiment: ${sentiments[Math.floor(Math.random() * 3)]}` };
-
-
-      case 'codegen':
-        return { text: `// Generated code:\nfunction ${inputText.split(' ')[0]}() {\n  return "${inputText}"\n}` };
-
-
-      case 'extract':
-        return {
-          text: `Entities: ${['Person', 'Location', 'Organization']
-            .map(e => `${e}: ${inputText.split(' ')[0]}_${e}`)
-            .join(', ')}`
-        };
-
+      // Add other bots here...
       default:
-        return { text: `Processed: ${inputText}` };
+        return { text: inputText };
     }
   }
 
+  // --- Workflow runner ---
   const runWorkflow = useCallback(async () => {
     const results = {};
     const inputNodeIds = getInputNodeIds(nodes, edges);
@@ -347,7 +296,7 @@ export default function Playground() {
     );
   }, [nodes, edges, processBotNode, setNodes]);
 
-  // Save, Load, Export, Import, Clear
+  // --- Save, Load, Export, Import, Clear ---
   const saveWorkflow = () => {
     localStorage.setItem(WORKFLOW_KEY, JSON.stringify({ nodes, edges }));
     alert('Workflow saved!');
@@ -411,7 +360,7 @@ export default function Playground() {
     event.target.value = '';
   };
 
-  // FINAL UPDATED ONDROP HANDLER
+  // --- Drag and Drop ---
   const onDrop = useCallback((event) => {
     event.preventDefault();
     const type = event.dataTransfer.getData('application/reactflow');
@@ -447,7 +396,7 @@ export default function Playground() {
         id: `${type}-${+new Date()}`,
         type: 'botNode',
         position,
-        data: { ...bot},
+        data: { ...bot },
       };
       setNodes((nds) => nds.concat(node));
       return;
@@ -458,6 +407,42 @@ export default function Playground() {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   }, []);
+
+  // --- Generate Workflow from Prompt ---
+  async function generateWorkflowFromPrompt(userPrompt) {
+    setIsGenerating(true);
+    try {
+      const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_OPENROUTER_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'meta-llama/llama-3.3-8b-instruct:free',
+          messages: [
+            { role: 'system', content: workflowGenerationPrompt(userPrompt) }
+          ]
+        }),
+      });
+      const data = await resp.json();
+      // Extract JSON from response (strip any code blocks)
+      let jsonString = data.choices?.[0]?.message?.content || '';
+      jsonString = jsonString.replace(/``````/g, '').trim();
+      const generatedWorkflow = JSON.parse(jsonString);
+      if (generatedWorkflow.nodes && generatedWorkflow.edges) {
+        setNodes(generatedWorkflow.nodes);
+        setEdges(generatedWorkflow.edges);
+        setPromptInput('');
+        alert('Workflow generated!');
+      } else {
+        alert('Failed to generate workflow: Invalid JSON structure.');
+      }
+    } catch (err) {
+      alert('Workflow generation failed: ' + err.message);
+    }
+    setIsGenerating(false);
+  }
 
   const currentNode = nodes.find(n => n.id === configModal.nodeId);
   const currentConfig = currentNode?.data?.config || {};
@@ -489,6 +474,25 @@ export default function Playground() {
           </button>
         </div>
       </div>
+      {/* Prompt-to-Workflow Section */}
+      <div className="flex items-center gap-2 p-4 bg-purple-50 border-b border-purple-200">
+        <input
+          type="text"
+          value={promptInput}
+          onChange={e => setPromptInput(e.target.value)}
+          placeholder="Describe your workflow (e.g., 'Summarize a PDF and translate to French')"
+          className="flex-1 border border-purple-300 rounded px-3 py-2"
+          disabled={isGenerating}
+        />
+        <button
+          onClick={() => generateWorkflowFromPrompt(promptInput)}
+          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded shadow"
+          disabled={isGenerating || !promptInput.trim()}
+        >
+          {isGenerating ? 'Generating...' : '🪄 Generate Workflow'}
+        </button>
+      </div>
+      {/* Playground */}
       <div className="flex-1 relative bg-gradient-to-br from-gray-50 to-gray-100">
         <ReactFlowProvider>
           <div
