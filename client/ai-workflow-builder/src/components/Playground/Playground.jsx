@@ -6,7 +6,7 @@ import InputNode from '../InputNode/InputNode';
 import OutputNode from '../OutputNode/OutputNode';
 import { aiBots } from '../../data/aiBots';
 import ConfigModal from '../BotNode/ConfigModal';
-import { extractTextFromPDF } from '../../utils/pdfutils';
+import { extractTextFromPDF } from '../../utils/pdfUtils';
 
 const initialNodes = [];
 const initialEdges = [];
