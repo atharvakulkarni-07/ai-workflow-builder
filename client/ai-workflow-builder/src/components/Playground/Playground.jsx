@@ -259,6 +259,7 @@ export default function Playground() {
         }
       
         // Use user-configured prompt, replacing {text} with inputText, or fallback
+        // {text} is always the response from previous node.
         const userPrompt = node.data.config?.prompt
           ? node.data.config.prompt.replace('{text}', inputText)
           : `A beautiful illustration of: ${inputText}`;
