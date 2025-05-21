@@ -7,10 +7,11 @@ import OutputNode from '../OutputNode/OutputNode';
 import { aiBots } from '../../data/aiBots';
 import ConfigModal from '../BotNode/ConfigModal';
 import { extractTextFromPDF } from '../../utils/pdfUtils';
+// All the essential imports done
 
 const initialNodes = [];
 const initialEdges = [];
-const WORKFLOW_KEY = 'savedWorkflow';
+const WORKFLOW_KEY = 'savedWorkflow'; // stores the workflow in localStorage of the browser when cliked on save.
 
 const getInputNodeIds = (nodes, edges) => {
   const targetIds = edges.map(e => e.target);
@@ -20,7 +21,7 @@ const getOutputNodeId = (nodes) => nodes.find(n => n.type === 'outputNode')?.id 
 const getNextNodeIds = (nodeId, edges) => edges.filter(e => e.source === nodeId).map(e => e.target);
 const getPrevNodeIds = (nodeId, edges) => edges.filter(e => e.target === nodeId).map(e => e.source);
 
-function workflowGenerationPrompt(userPrompt) {
+function workflowGenerationPrompt(userPrompt) { // standard prompt for generating workflow when sent to AI
   return `
 You are a workflow generator for an AI automation tool. Convert this user request into a valid React Flow JSON workflow:
 
@@ -51,8 +52,9 @@ Important rules:
 - Always start with an inputNode and end with an outputNode
 - Never add markdown/extra text - only JSON
 `;
-}
+} // rules need to be updated in a more stringent manner to avoid errors.
 
+// THE MAIN SCRIPT of the COMPONENT PLAYGROUND
 export default function Playground() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -86,7 +88,7 @@ export default function Playground() {
     outputNode: OutputNode,
   }), [setConfigModal]);
 
-  // --- Validation Logic (unchanged) ---
+  // Validation Logic (INPUT TYPE -> BOT TYPE)
   const allowedBotTargets = {
     'input-image': ['imagegen', 'img2img'],
     'input-audio': ['speech2text', 'text2speech'],
@@ -130,7 +132,7 @@ export default function Playground() {
       setEdges((eds) => addEdge(params, eds));
       setConnectionLineStyle({});
     } else {
-      setConnectionLineStyle({
+      setConnectionLineStyle({ // the LINE STYLE when the connection is INVALID (basically no line)
         stroke: '#ff0000',
         strokeWidth: 2,
       });
@@ -138,8 +140,8 @@ export default function Playground() {
     }
   }, [setEdges, isValidConnection]);
 
-  // --- AI Bot Logic (summarizer, gpt, translator, etc.) ---
-
+  //AI Bot Logic (summarizer, gpt, translator, etc.) 
+  // SOUL OF THE COMPONENT
   async function processBotNode(node, inputData) {
     // Universal input handling for all bots
     let inputText = inputData?.text || inputData?.name || 'No input';
@@ -151,6 +153,8 @@ export default function Playground() {
       }
     }
     switch (node.data.id) {
+
+      // TEXT GENERATOR BOT
       case 'gpt': {
         try {
           const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -185,6 +189,9 @@ export default function Playground() {
           return { text: 'Error: Unable to generate text.' };
         }
       }
+
+
+      // SUMMARIZER BOT
       case 'summarizer': {
         try {
           const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -213,6 +220,9 @@ export default function Playground() {
           return { text: 'Error: Unable to summarize text.' };
         }
       }
+
+
+      // TRANSLATOR BOT
       case 'translator': {
         const userPrompt = node.data.config?.prompt
           ? node.data.config.prompt.replace('{text}', inputText)
@@ -245,6 +255,8 @@ export default function Playground() {
         }
       }
 
+
+      // IMAGE GENERATOR BOT
       case 'imagegen': {
         // Prefer previous bot's text, else file name, else fallback
         let inputText = inputData?.text || inputData?.name || 'No input';
@@ -274,13 +286,13 @@ export default function Playground() {
         };
       }
 
-      // other bots
+      // OTHER BOTS YET TO BE IMPLEMENTED DUE TO COMPLEX IMPLEMENTATION AND API HANDLING
       default:
         return { text: inputText };
     }
   }
 
-  // --- Workflow runner ---
+  // WHEN YOU HIT THE 'RUN BUTTON' THIS FUNCTION IS CALLED
   const runWorkflow = useCallback(async () => {
     const results = {};
     const inputNodeIds = getInputNodeIds(nodes, edges);
@@ -332,12 +344,16 @@ export default function Playground() {
   }, [nodes, edges, processBotNode, setNodes]);
   
 
-  // --- Save, Load, Export, Import, Clear ---
+  // Save, Load, Export, Import, Clear FUNCTIONS
+
+  // SAVE
   const saveWorkflow = () => {
     localStorage.setItem(WORKFLOW_KEY, JSON.stringify({ nodes, edges }));
     alert('Workflow saved!');
   };
 
+
+  // LOAD
   const loadWorkflow = () => {
     const saved = localStorage.getItem(WORKFLOW_KEY);
     if (saved) {
@@ -356,6 +372,8 @@ export default function Playground() {
     }
   };
 
+
+  // CLEAR
   const clearWorkflow = () => {
     setNodes([]);
     setEdges([]);
@@ -363,6 +381,8 @@ export default function Playground() {
     alert('Workflow cleared!');
   };
 
+
+  // EXPORT
   const exportWorkflow = () => {
     const dataStr = JSON.stringify({ nodes, edges }, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
@@ -374,6 +394,8 @@ export default function Playground() {
     URL.revokeObjectURL(url);
   };
 
+
+  // IMPORT
   const importWorkflow = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -396,7 +418,7 @@ export default function Playground() {
     event.target.value = '';
   };
 
-  // --- Drag and Drop ---
+  // DRAG AND DROP HANDLER (SIDEBAR -> PLAYGROUND) also (PLAYGROUND -> PLAYGROUND)
   const onDrop = useCallback((event) => {
     event.preventDefault();
     const type = event.dataTransfer.getData('application/reactflow');
@@ -444,7 +466,7 @@ export default function Playground() {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
-  // --- Generate Workflow from Prompt ---
+  // WORKFLOW GENERATION FROM PROMPT
   async function generateWorkflowFromPrompt(userPrompt) {
     setIsGenerating(true);
     try {
@@ -474,7 +496,7 @@ export default function Playground() {
       } else {
         alert('Failed to generate workflow: Invalid JSON structure.');
       }
-    } catch (err) {
+    } catch (err) { // Handle errors
       alert('Workflow generation failed: ' + err.message);
     }
     setIsGenerating(false);
