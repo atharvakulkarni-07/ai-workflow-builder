@@ -21,38 +21,69 @@ const getOutputNodeId = (nodes) => nodes.find(n => n.type === 'outputNode')?.id 
 const getNextNodeIds = (nodeId, edges) => edges.filter(e => e.source === nodeId).map(e => e.target);
 const getPrevNodeIds = (nodeId, edges) => edges.filter(e => e.target === nodeId).map(e => e.source);
 
-function workflowGenerationPrompt(userPrompt) { // standard prompt for generating workflow when sent to AI
+function workflowGenerationPrompt(userPrompt) {
   return `
-You are a workflow generator for an AI automation tool. Convert this user request into a valid React Flow JSON workflow:
+You are a workflow generator for an AI automation tool. Convert the user request below into a valid React Flow JSON workflow.
 
-USER REQUEST: "${userPrompt}"
+**STRICT RULES:**
+- Only use these node types: "inputNode", "botNode", "outputNode".
+- For all bot nodes (summarizer, translator, etc), always set "type": "botNode".
+- For all bot nodes, the "data" object MUST include ALL of these fields (with correct values):
+    - For Summarizer:
+      { "id": "summarizer", "name": "Summarizer", "description": "Summarize text", "type": "text", "outputType": "text" }
+    - For Translator:
+      { "id": "translator", "name": "Translator", "description": "Translate text", "type": "text", "outputType": "text" }
+    - (Add other bots as needed)
+- For input nodes, "data" must include both "name" and "type" fields.
+- For output nodes, "data" is an empty object: {}
+- Edge IDs must be of the form: "xy-edge__<source>-<target>"
+- Never use node types like "summarizer", "translator", etc. Only use "botNode" for all bots.
+- Only output valid JSON, no markdown or extra text.
 
-Respond ONLY with valid JSON in this structure:
+**EXAMPLE:**
 {
   "nodes": [
     {
-      "id": "input-1",
+      "id": "input-123",
       "type": "inputNode",
       "position": { "x": 100, "y": 100 },
-      "data": { "label": "Input PDF" }
+      "data": { "name": "", "type": "input-file" }
+    },
+    {
+      "id": "summarizer-123",
+      "type": "botNode",
+      "position": { "x": 300, "y": 100 },
+      "data": { "id": "summarizer", "name": "Summarizer", "description": "Summarize text", "type": "text", "outputType": "text" }
+    },
+    {
+      "id": "translator-123",
+      "type": "botNode",
+      "position": { "x": 500, "y": 100 },
+      "data": { "id": "translator", "name": "Translator", "description": "Translate text", "type": "text", "outputType": "text" }
+    },
+    {
+      "id": "output-123",
+      "type": "outputNode",
+      "position": { "x": 700, "y": 100 },
+      "data": {}
     }
-    // ...more nodes
   ],
   "edges": [
-    {
-      "id": "e1-2",
-      "source": "input-1",
-      "target": "summarizer-1"
-    }
+    { "id": "xy-edge__input-123-summarizer-123", "source": "input-123", "target": "summarizer-123" },
+    { "id": "xy-edge__summarizer-123-translator-123", "source": "summarizer-123", "target": "translator-123" },
+    { "id": "xy-edge__translator-123-output-123", "source": "translator-123", "target": "output-123" }
   ]
 }
 
-Important rules:
-- Use these node types: inputNode, outputNode, summarizer, translator, gpt
-- Always start with an inputNode and end with an outputNode
-- Never add markdown/extra text - only JSON
-`;
-} // rules need to be updated in a more stringent manner to avoid errors.
+USER REQUEST: "${userPrompt}"
+
+Respond ONLY with valid JSON as shown above. Do NOT use markdown or add any explanation.
+  `;
+}
+
+// rules need to be updated in a more stringent manner to avoid errors.
+// try using other nice AI Models so that the workflow are made more accurately.
+//  We are not fine tuning any model for this, this is a short type learning of the model by looking at the examples;
 
 // THE MAIN SCRIPT of the COMPONENT PLAYGROUND
 export default function Playground() {
@@ -92,7 +123,7 @@ export default function Playground() {
   const allowedBotTargets = {
     'input-image': ['imagegen', 'img2img'],
     'input-audio': ['speech2text', 'text2speech'],
-    'input-file': ['summarizer', 'translator', 'gpt', 'sentiment', 'codegen', 'extract', 'imagegen'],
+    'input-file': ['summarizer', 'translator', 'gpt', 'sentiment', 'codegen', 'extract', 'imagegen', 'text2speech'],
   };
   const isValidConnection = useCallback((connection) => {
     const sourceNode = nodes.find(n => n.id === connection.source);
@@ -124,6 +155,15 @@ export default function Playground() {
     ) {
       return true;
     }
+    if (
+      sourceNode.type === 'botNode' &&
+      targetNode.type === 'botNode' &&
+      sourceNode.data.outputType === 'text' &&
+      targetNode.data.outputType === 'audio'
+    ) {
+      return true;
+    }
+    
     return false;
   }, [nodes, edges]);
 
@@ -285,6 +325,53 @@ export default function Playground() {
           imageUrl
         };
       }
+
+
+      // TEXT-TO-SPEECH AI BOT
+      case 'text2speech': {
+        // Universal input handling
+        let inputText = inputData?.text || inputData?.name || 'No input';
+      
+        // If input is a PDF file, extract its text (optional)
+        if (inputData?.file?.type === 'application/pdf') {
+          try {
+            inputText = await extractTextFromPDF(inputData.file);
+          } catch (err) {
+            return { text: 'Error reading PDF file' };
+          }
+        }
+      
+        try {
+          const resp = await fetch('http://localhost:3005/api/tts', {  // <-- call your backend proxy here
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'PlayDialog',
+              text: inputText,
+              voice: 'en-US-1',  // optionally make configurable
+              outputFormat: 'mp3',
+              speed: 1,
+              sampleRate: 44100,
+              language: 'english',
+            }),
+          });
+      
+          if (!resp.ok) {
+            return { text: `API Error: ${resp.status} ${resp.statusText}` };
+          }
+      
+          const data = await resp.json();
+      
+          return {
+            text: 'Audio generated.',
+            audioUrl: data.audioUrl || data.url || '',
+          };
+        } catch (err) {
+          return { text: 'Error: Unable to generate speech.' };
+        }
+      }      
 
       // OTHER BOTS YET TO BE IMPLEMENTED DUE TO COMPLEX IMPLEMENTATION AND API HANDLING
       default:
@@ -502,6 +589,13 @@ export default function Playground() {
     setIsGenerating(false);
   }
 
+
+
+  // Workflow Generation from Voice-to-text;
+
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef(null);
+
   const currentNode = nodes.find(n => n.id === configModal.nodeId);
   const currentConfig = currentNode?.data?.config || {};
 
@@ -532,24 +626,60 @@ export default function Playground() {
           </button>
         </div>
       </div>
+
+
       {/* Prompt-to-Workflow Section */}
       <div className="flex items-center gap-2 p-4 bg-purple-50 border-b border-purple-200">
-        <input
-          type="text"
-          value={promptInput}
-          onChange={e => setPromptInput(e.target.value)}
-          placeholder="Describe your workflow (e.g., 'Summarize a PDF and translate to French')"
-          className="flex-1 border border-purple-300 rounded px-3 py-2"
-          disabled={isGenerating}
-        />
-        <button
-          onClick={() => generateWorkflowFromPrompt(promptInput)}
-          className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded shadow"
-          disabled={isGenerating || !promptInput.trim()}
-        >
-          {isGenerating ? 'Generating...' : '🪄 Generate Workflow'}
-        </button>
-      </div>
+      <input
+        type="text"
+        value={promptInput}
+        onChange={e => setPromptInput(e.target.value)}
+        placeholder="Describe your workflow (e.g., 'Summarize a PDF and translate to French')"
+        className="flex-1 border border-purple-300 rounded px-3 py-2"
+        disabled={isGenerating || listening}
+      />
+      <button
+        onClick={() => {
+          // Web Speech API logic
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!SpeechRecognition) {
+            alert('Speech recognition is not supported in this browser.');
+            return;
+          }
+          const recognition = new SpeechRecognition();
+          recognition.lang = 'en-US';
+          recognition.interimResults = false;
+          recognition.maxAlternatives = 1;
+          recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            setPromptInput(transcript);
+            setListening(false);
+            // Optionally auto-generate:
+            // generateWorkflowFromPrompt(transcript);
+          };
+          recognition.onerror = () => setListening(false);
+          recognition.onend = () => setListening(false);
+          recognition.start();
+          setListening(true);
+          recognitionRef.current = recognition;
+        }}
+        className={`px-3 py-2 rounded shadow ${listening ? 'bg-red-500' : 'bg-blue-500'} text-white`}
+        title={listening ? "Listening..." : "Speak your prompt"}
+        disabled={isGenerating || listening}
+      >
+        {listening ? '⏹️ Stop' : '🎤 Speak'}
+      </button>
+      <button
+        onClick={() => generateWorkflowFromPrompt(promptInput)}
+        className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded shadow"
+        disabled={isGenerating || !promptInput.trim()}
+      >
+        {isGenerating ? 'Generating...' : '🪄 Generate Workflow'}
+      </button>
+    </div>
+
+
+
       {/* Playground */}
       <div className="flex-1 relative bg-gradient-to-br from-gray-50 to-gray-100">
         <ReactFlowProvider>

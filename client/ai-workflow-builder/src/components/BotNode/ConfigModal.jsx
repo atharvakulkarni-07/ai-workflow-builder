@@ -24,6 +24,7 @@ export default function ConfigModal({ isOpen, onClose, bot, config, onSave }) {
             onClose();
           }}
         >
+          {/* TEXT BOTS */}
           {bot.type === 'text' && (
             <>
               <div className="mb-4">
@@ -55,6 +56,8 @@ export default function ConfigModal({ isOpen, onClose, bot, config, onSave }) {
               </div>
             </>
           )}
+
+          {/* IMAGE BOTS */}
           {bot.type === 'image' && (
             <>
               <div className="mb-4">
@@ -79,7 +82,53 @@ export default function ConfigModal({ isOpen, onClose, bot, config, onSave }) {
               </div>
             </>
           )}
-          {/* Add more fields per bot type as needed */}
+
+          {/* AUDIO BOTS (Text-to-Speech) */}
+          {bot.type === 'audio' && (
+            <>
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">
+                  <span className="font-semibold">Text to Speak</span>
+                  <span className="text-xs text-gray-500 ml-1">(use <code>{'{text}'}</code> for input)</span>
+                </label>
+                <textarea
+                  className="border rounded w-full p-2"
+                  value={form.prompt || ''}
+                  onChange={e => setForm(f => ({ ...f, prompt: e.target.value }))}
+                  placeholder="e.g. Read this out loud: {text}"
+                  rows={3}
+                  required
+                />
+              </div>
+              {/* Optional: Voice selection */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">
+                  Voice (optional)
+                </label>
+                <input
+                  type="text"
+                  className="border rounded w-full p-2"
+                  value={form.voice || ''}
+                  onChange={e => setForm(f => ({ ...f, voice: e.target.value }))}
+                  placeholder="e.g. en-US-1"
+                />
+              </div>
+              {/* Optional: Language selection */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-1">
+                  Language (optional)
+                </label>
+                <input
+                  type="text"
+                  className="border rounded w-full p-2"
+                  value={form.language || ''}
+                  onChange={e => setForm(f => ({ ...f, language: e.target.value }))}
+                  placeholder="e.g. english"
+                />
+              </div>
+            </>
+          )}
+
           <button
             type="submit"
             className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"

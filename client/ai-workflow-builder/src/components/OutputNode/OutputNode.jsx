@@ -23,7 +23,7 @@ export default function OutputNode({ data }) {
         This node collects and displays the final result of your workflow.
       </div>
       {/* Show image if present */}
-      {data.imageUrl ? (
+      {data.imageUrl && (
         <>
           <img
             src={data.imageUrl}
@@ -37,18 +37,23 @@ export default function OutputNode({ data }) {
               boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
             }}
           />
-          {data.text && (
-            <div className="mt-2 p-2 bg-white rounded border text-green-700">
-              <strong>Result:</strong> {data.text}
-            </div>
-          )}
         </>
-      ) : (
-        data.result && (
-          <div className="mt-2 p-2 bg-white rounded border text-green-700">
-            <strong>Result:</strong> {data.result}
-          </div>
-        )
+      )}
+      {/* Show audio if present */}
+      {data.audioUrl && (
+        <audio
+          controls
+          src={data.audioUrl}
+          style={{ width: '100%', marginTop: 16, marginBottom: 8 }}
+        >
+          Your browser does not support the audio element.
+        </audio>
+      )}
+      {/* Show text result if present */}
+      {(data.result || data.text) && (
+        <div className="mt-2 p-2 bg-white rounded border text-green-700">
+          <strong>Result:</strong> {data.result || data.text}
+        </div>
       )}
     </div>
   );
