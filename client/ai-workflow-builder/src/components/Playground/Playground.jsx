@@ -206,7 +206,7 @@ export default function Playground() {
               'X-Title': 'workflow.ai',
             },
             body: JSON.stringify({
-              model: 'meta-llama/llama-3.3-8b-instruct:free',
+              model: 'meta-llama/llama-3.3-70b-instruct:free',
               messages: [
                 { role: 'system', content: 'You are a helpful assistant...' },
                 { role: 'user', content: inputText }
@@ -243,7 +243,7 @@ export default function Playground() {
               'X-Title': 'workflow.ai',
             },
             body: JSON.stringify({
-              model: 'meta-llama/llama-3.3-8b-instruct:free',
+              model: 'meta-llama/llama-3.3-70b-instruct:free',
               messages: [
                 { role: 'system', content: 'You are a helpful assistant that summarizes text clearly and concisely.' },
                 { role: 'user', content: `Summarize the following text:\n\n${inputText}` }
@@ -277,7 +277,7 @@ export default function Playground() {
               'X-Title': 'workflow.ai',
             },
             body: JSON.stringify({
-              model: 'meta-llama/llama-3.3-8b-instruct:free',
+              model: 'meta-llama/llama-3.3-70b-instruct:free',
               messages: [
                 { role: 'system', content: 'You are a translation assistant. You will translate the data you get in the language asked by the user.' },
                 { role: 'user', content: userPrompt }
@@ -372,6 +372,38 @@ export default function Playground() {
           return { text: 'Error: Unable to generate speech.' };
         }
       }      
+
+      case 'sentiment' :  {
+        const userPrompt = node.data.config?.prompt
+          ? node.data.config.prompt.replace('{text}', inputText)
+          : `Translate this to French:\n\n${inputText}`;
+        try {
+          const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${import.meta.env.VITE_OPENROUTER_KEY}`,
+              'Content-Type': 'application/json',
+              'HTTP-Referer': window.location.origin,
+              'X-Title': 'workflow.ai',
+            },
+            body: JSON.stringify({
+              model: 'meta-llama/llama-3.3-70b-instruct:free',
+              messages: [
+                { role: 'system', content: 'You are an excellent SENTIMENT ANALYZER. You will analyze the data that is provided by the user and PROVIDE THE SENTIMENT after reading the data ins just ONE SENTENCE. NO EXTRA DESCRIPTION NEEDED. JUST STICK TO THE SENTIMENT' },
+                { role: 'user', content: userPrompt }
+              ],
+              max_tokens: 512,
+            }),
+          });
+          const data = await resp.json();
+          if (data.error) {
+            return { text: `API Error: ${data.error.message}` };
+          }
+          return { text: data.choices?.[0]?.message?.content || 'No result' };
+        } catch (err) {
+          return { text: 'Error: Unable to translate text.' };
+        }
+      }
 
       // OTHER BOTS YET TO BE IMPLEMENTED DUE TO COMPLEX IMPLEMENTATION AND API HANDLING
       default:
