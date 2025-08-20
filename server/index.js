@@ -38,4 +38,4 @@ app.get('/api/hello', (req, res) => {
 })
 
 const PORT = process.env.PORT || 3005;
-app.listen(PORT, () => console.log(`Proxy running on port ${PORT}, website: http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Proxy server running on port ${PORT}, website: http://localhost:${PORT}`));
