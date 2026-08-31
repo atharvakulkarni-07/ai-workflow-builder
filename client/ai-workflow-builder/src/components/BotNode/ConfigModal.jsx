@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useCallback } from 'react';
 
 export default function ConfigModal({ isOpen, onClose, bot, config, onSave }) {
   const [form, setForm] = React.useState(config || {});
@@ -7,14 +7,35 @@ export default function ConfigModal({ isOpen, onClose, bot, config, onSave }) {
     setForm(config || {});
   }, [config, isOpen]);
 
+  // Close on Escape key
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Escape') onClose();
+  }, [onClose]);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isOpen, handleKeyDown]);
+
   if (!isOpen || !bot) return null;
 
+  // Close on backdrop click
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+      onClick={handleBackdropClick}
+    >
       <div className="bg-white rounded-lg p-6 min-w-[320px] shadow-lg relative">
         <button
-          className="absolute top-2 right-2 text-gray-400 hover:text-gray-700"
+          className="absolute top-2 right-2 text-gray-400 hover:text-gray-700 transition-colors"
           onClick={onClose}
+          aria-label="Close modal"
         >✕</button>
         <h2 className="text-lg font-bold mb-4">Configure: {bot.name}</h2>
         <form
@@ -131,7 +152,7 @@ export default function ConfigModal({ isOpen, onClose, bot, config, onSave }) {
 
           <button
             type="submit"
-            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
           >
             Save
           </button>

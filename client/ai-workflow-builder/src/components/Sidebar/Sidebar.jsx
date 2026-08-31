@@ -1,7 +1,7 @@
 import React from 'react';
 import { aiBots } from '../../data/aiBots';
 
-export default function Sidebar() {
+export default function Sidebar({ uploadedFiles: _uploadedFiles, setUploadedFiles: _setUploadedFiles }) {
   return (
     <div className="p-5 bg-gray-50 h-full overflow-y-auto flex flex-col">
 
@@ -10,7 +10,7 @@ export default function Sidebar() {
         <h2 className="text-2xl font-bold mb-3 border-b border-gray-300 pb-1">Input Nodes</h2>
         <ul>
           <li
-            className="mb-3 p-3 bg-yellow-100 rounded shadow cursor-move border border-yellow-400 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+            className="mb-3 p-3 bg-yellow-100 rounded shadow cursor-move border border-yellow-400 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-yellow-400 transition-colors"
             draggable
             tabIndex={0}
             onDragStart={e => {
@@ -30,7 +30,7 @@ export default function Sidebar() {
         <h2 className="text-2xl font-bold mb-3 border-b border-gray-300 pb-1">Output</h2>
         <ul>
           <li
-            className="mb-3 p-3 bg-lime-100 rounded shadow cursor-move border border-lime-300 hover:bg-lime-200 focus:outline-none focus:ring-2 focus:ring-lime-400"
+            className="mb-3 p-3 bg-lime-100 rounded shadow cursor-move border border-lime-300 hover:bg-lime-200 focus:outline-none focus:ring-2 focus:ring-lime-400 transition-colors"
             draggable
             tabIndex={0}
             onDragStart={e => {
@@ -52,7 +52,7 @@ export default function Sidebar() {
           {aiBots.map(bot => (
             <li
               key={bot.id}
-              className="mb-3 p-3 bg-white rounded shadow cursor-move border border-gray-200 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              className="mb-3 p-3 bg-white rounded shadow cursor-move border border-gray-200 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-colors"
               draggable
               tabIndex={0}
               onDragStart={e => {

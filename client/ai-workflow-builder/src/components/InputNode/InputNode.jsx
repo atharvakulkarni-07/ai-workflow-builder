@@ -1,8 +1,20 @@
-import React from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { Handle, Position, useReactFlow } from '@xyflow/react';
 
 export default function InputNode({ data, id }) {
   const { setNodes } = useReactFlow();
+
+  // Create a stable object URL for file previews, and revoke on cleanup
+  const previewUrl = useMemo(() => {
+    if (data.file) return URL.createObjectURL(data.file);
+    return null;
+  }, [data.file]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -27,17 +39,17 @@ export default function InputNode({ data, id }) {
         className="mb-2"
       />
       {/* Show preview for image */}
-      {data.type === 'input-image' && data.file && (
+      {data.type === 'input-image' && previewUrl && (
         <img
-          src={URL.createObjectURL(data.file)}
+          src={previewUrl}
           alt={data.name}
           className="w-full h-20 object-cover rounded"
         />
       )}
       {/* Show audio controls */}
-      {data.type === 'input-audio' && data.file && (
+      {data.type === 'input-audio' && previewUrl && (
         <audio controls className="w-full mt-2">
-          <source src={URL.createObjectURL(data.file)} type={data.file.type} />
+          <source src={previewUrl} type={data.file.type} />
         </audio>
       )}
       <Handle

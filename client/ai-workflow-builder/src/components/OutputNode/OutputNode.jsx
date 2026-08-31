@@ -3,7 +3,7 @@ import { Handle, Position } from '@xyflow/react';
 
 export default function OutputNode({ data }) {
   return (
-    <div className="rounded-md border-2 bg-lime-100 border-lime-400 p-3 min-w-[180px] relative">
+    <div className="rounded-md border-2 bg-lime-100 border-lime-400 p-3 min-w-[180px] max-w-[360px] relative">
       {/* Input handle (top) */}
       <Handle
         type="target"
@@ -13,8 +13,8 @@ export default function OutputNode({ data }) {
           bottom: 20,
           width: 18,
           height: 18,
-          background: '#facc15',
-          borderColor: '#eab308',
+          background: '#84cc16',   // lime-500
+          borderColor: '#65a30d',  // lime-600
           boxShadow: '0 0 0 2px white',
         }}
       />
@@ -24,20 +24,18 @@ export default function OutputNode({ data }) {
       </div>
       {/* Show image if present */}
       {data.imageUrl && (
-        <>
-          <img
-            src={data.imageUrl}
-            alt="AI generated"
-            style={{
-              maxWidth: '100%',
-              maxHeight: 240,
-              borderRadius: 8,
-              marginTop: 8,
-              marginBottom: 8,
-              boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
-            }}
-          />
-        </>
+        <img
+          src={data.imageUrl}
+          alt="AI generated"
+          style={{
+            maxWidth: '100%',
+            maxHeight: 240,
+            borderRadius: 8,
+            marginTop: 8,
+            marginBottom: 8,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+          }}
+        />
       )}
       {/* Show audio if present */}
       {data.audioUrl && (
@@ -51,7 +49,7 @@ export default function OutputNode({ data }) {
       )}
       {/* Show text result if present */}
       {(data.result || data.text) && (
-        <div className="mt-2 p-2 bg-white rounded border text-green-700">
+        <div className="mt-2 p-2 bg-white rounded border text-green-700 text-sm break-words overflow-y-auto max-h-48">
           <strong>Result:</strong> {data.result || data.text}
         </div>
       )}

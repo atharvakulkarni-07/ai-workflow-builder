@@ -1,7 +1,6 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
 
-// Optionally, you can use some icon library for better visuals
 const typeColors = {
   text: 'bg-blue-100 border-blue-400',
   image: 'bg-green-100 border-green-400',
@@ -10,9 +9,10 @@ const typeColors = {
   default: 'bg-gray-100 border-gray-400',
 };
 
-// Add onConfigure and id props
-export default function BotNode({ data, id, onConfigure }) {
-  const { name, description, type, config } = data;
+// BotNode now reads onConfigure from data._onConfigure (injected by Playground)
+// instead of receiving it as a direct prop via a closure wrapper.
+export default function BotNode({ data, id }) {
+  const { name, description, type, config, _onConfigure } = data;
   const colorClass = typeColors[type] || typeColors.default;
 
   return (
@@ -26,22 +26,22 @@ export default function BotNode({ data, id, onConfigure }) {
             bottom: 20,
             width: 18,
             height: 18,
-            background: 'green-400', 
-            borderColor: 'green-600', 
+            background: '#4ade80',   // green-400
+            borderColor: '#16a34a',  // green-600
             boxShadow: '0 0 0 2px white',
           }}
       />
       <div className="font-bold text-base mb-1">{name}</div>
       <div className="text-xs text-gray-600 mb-2">{description}</div>
       <button
-        className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
-        onClick={() => onConfigure && onConfigure(id)}
+        className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 transition-colors"
+        onClick={() => _onConfigure && _onConfigure(id)}
       >
         Configure
       </button>
       {config && (
         <div className="mt-2 text-xs text-green-700">
-          Configured
+          ✓ Configured
         </div>
       )}
       {/* Output handle (bottom) */}
